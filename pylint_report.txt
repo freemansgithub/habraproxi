@@ -1,0 +1,113 @@
+************* Module proxi
+C:  1, 0: Missing module docstring (missing-docstring)
+C:  9, 0: Invalid constant name "app" (invalid-name)
+C: 19, 0: Invalid function name "parse_and_add_TM_to_source" (invalid-name)
+C: 19, 0: Missing function docstring (missing-docstring)
+E: 18, 1: Undefined variable 'profile' (undefined-variable)
+C: 25, 4: Consider using enumerate instead of iterating with range and len (consider-using-enumerate)
+C: 42, 4: Invalid constant name "html_parsed" (invalid-name)
+C: 43, 4: Invalid constant name "f" (invalid-name)
+C:  3, 0: standard import "import urllib2" comes before "from flask import Flask, render_template" (wrong-import-order)
+C:  4, 0: standard import "import sys" comes before "from flask import Flask, render_template" (wrong-import-order)
+
+
+Report
+======
+30 statements analysed.
+
+Statistics by type
+------------------
+
++---------+-------+-----------+-----------+------------+---------+
+|type     |number |old number |difference |%documented |%badname |
++=========+=======+===========+===========+============+=========+
+|module   |1      |1          |=          |0.00        |0.00     |
++---------+-------+-----------+-----------+------------+---------+
+|class    |0      |0          |=          |0           |0        |
++---------+-------+-----------+-----------+------------+---------+
+|method   |0      |0          |=          |0           |0        |
++---------+-------+-----------+-----------+------------+---------+
+|function |2      |2          |=          |50.00       |50.00    |
++---------+-------+-----------+-----------+------------+---------+
+
+
+
+External dependencies
+---------------------
+::
+
+    bs4 (proxi)
+    flask (proxi)
+
+
+
+Raw metrics
+-----------
+
++----------+-------+------+---------+-----------+
+|type      |number |%     |previous |difference |
++==========+=======+======+=========+===========+
+|code      |34     |70.83 |35       |-1.00      |
++----------+-------+------+---------+-----------+
+|docstring |1      |2.08  |1        |=          |
++----------+-------+------+---------+-----------+
+|comment   |1      |2.08  |1        |=          |
++----------+-------+------+---------+-----------+
+|empty     |12     |25.00 |12       |=          |
++----------+-------+------+---------+-----------+
+
+
+
+Duplication
+-----------
+
++-------------------------+------+---------+-----------+
+|                         |now   |previous |difference |
++=========================+======+=========+===========+
+|nb duplicated lines      |0     |0        |=          |
++-------------------------+------+---------+-----------+
+|percent duplicated lines |0.000 |0.000    |=          |
++-------------------------+------+---------+-----------+
+
+
+
+Messages by category
+--------------------
+
++-----------+-------+---------+-----------+
+|type       |number |previous |difference |
++===========+=======+=========+===========+
+|convention |9      |9        |=          |
++-----------+-------+---------+-----------+
+|refactor   |0      |0        |=          |
++-----------+-------+---------+-----------+
+|warning    |0      |2        |-2.00      |
++-----------+-------+---------+-----------+
+|error      |1      |1        |=          |
++-----------+-------+---------+-----------+
+
+
+
+Messages
+--------
+
++-------------------------+------------+
+|message id               |occurrences |
++=========================+============+
+|invalid-name             |4           |
++-------------------------+------------+
+|wrong-import-order       |2           |
++-------------------------+------------+
+|missing-docstring        |2           |
++-------------------------+------------+
+|undefined-variable       |1           |
++-------------------------+------------+
+|consider-using-enumerate |1           |
++-------------------------+------------+
+
+
+
+Global evaluation
+-----------------
+Your code has been rated at 5.33/10 (previous run: 4.84/10, +0.49)
+

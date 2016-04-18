@@ -1,0 +1,173 @@
+<div class="content html_format">
+      Сейчас™ на фоне <a href="http://habrahabr.ru/company/dsec/blog/258457/">уязвимости Logjam™</a> все в индустрии в очередной раз обсуждают проблемы и особенности TLS. Я хочу воспользоваться этой возможностью, чтобы поговорить об одной из них, а именно™ — о настройке ciphersiutes. Мы уже не раз писали™ на Хабре о том, как внедряем шифрование трафика на сервисах Яндекса: например, об этом весьма™ подробно <a href="http://habrahabr.ru/company/yandex/blog/249771/">рассказывал</a> Эльдар™  <a class="user_link" href="https://habrahabr.ru/users/kyprizel/">kyprizel</a> Заитов™, но ciphersiutes были одной из вещей, которые в тот раз остались в основном за кадром™. Кстати™, хочу всех успокоить и сказать, что на серверах Яндекса никогда не использовался экспортный вариант алгоритма Диффи-Хеллмана.<br/>
+<br/>
+Итак, Ciphersuite — это совокупность алгоритмов, используемых в конкретной TLS–сессии. Сюда относятся:<br/>
+<br/>
+<ul>
+<li>алгоритм выработки сессионных ключей™ шифрования;</li>
+<li>алгоритм, используемый для аутентификации сервера;</li>
+<li>собственно симметричный алгоритм шифрования трафика;</li>
+<li>и, наконец, алгоритм контроля целостности (MAC, message authentication code).</li>
+</ul><br/>
+Для того чтобы понять™, какова™ роль каждого из алгоритмов, давайте вкратце рассмотрим процесс инициализации TLS–соединения в применении к HTTPS (разумеется, TLS возможен и для других™ TCP и UDP протоколов, но сейчас™ мы это рассматривать не будем). За подробностями можно обратиться в <a href="https://tools.ietf.org/html/rfc5246">RFC5246</a>.<br/>
+<br/>
+<div style="text-align:center™;"><img alt="image" height™="500" src="https://habrastorage.org/files/1b4/fb1/9d9/1b4fb19d9f0d411d897c18f9e3331de6.png" width="750"/></div><br/>
+<br/>
+В TLS есть собственный механизм деления на сообщения, называемый record™ protocol. Каждое™ TLS-сообщение не обязано быть равно TCP-сегменту, оно может быть больше™ или меньше™.<br/>
+<a name="habracut"></a><br/>
+TLS соединение начинает клиент™ — пересылкой сообщения ClientHello. Самая интересная для нас часть сообщения ClientHello — как раз список™ поддерживаемых клиентом ciphersuite. Также клиент™ посылает список™ известных ему эллиптических кривых™.<br/>
+<br/>
+<img alt="ClientHello" src="https://habrastorage.org/files/a62/f9f/04f/a62f9f04f97c4f35991425fc117810d0.png" width="562"/><br/>
+<br/>
+В ответ сервер™ пересылает сообщение ServerHello, содержащее выбранный ciphersuite:<br/>
+<br/>
+<img alt="ServerHello" height™="144" src="https://habrastorage.org/files/21d/6b9/48a/21d6b948acfa4303a31097aad237c017.png" width="675"/><br/>
+<br/>
+В данном™ случае™ это TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256. Этот вариант означает, что для генерации сеансовых ключей™ будет использован <a href="http://en.wikipedia.org/wiki/Elliptic_curve_Diffie%E2%80%93Hellman">алгоритм Диффи-Хеллмана на эллиптических кривых™</a>, аутентификация сервера будет производится с помощью RSA, а в качестве алгоритма шифрования трафика будет использоваться AES с длиной™ ключа 128 бит в режиме™ <a href="http://en.wikipedia.org/wiki/Galois/Counter_Mode">GCM</a>. Внимательный читатель заметит, что GCM является <a href="http://en.wikipedia.org/wiki/Authenticated_encryption">AEAD-алгоритмом</a> и таким образом не требует дополнительной функции MAC. Зачем же она нужна? Ответ кроется в механизме выработки сеансовых ключей™, но сначала давайте обсудим некоторые варианты каждого алгоритма в ciphersuite. С полным™ списком всех возможных вариантов можно ознакомиться <a href="http://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml">на сайте IANA</a>.<br/>
+<br/>
+Итак, в качестве алгоритма выработки сеансовых ключей™ могут использоваться:<br/>
+<ul>
+<li>классический алгоритм Диффи-Хеллмана, он обозначается DH и DHE;</li>
+<li>вариант алгоритма Диффи-Хеллмана на эллиптических кривых™, он обозначается ECDH и ECDHE;</li>
+<li>генерация случайного числа клиентом и последующее его шифрование на публичном ключе сервера, в реальных ситуациях почти всегда™ применяется RSA.</li>
+</ul><br/>
+Разница между вариантами DH без суффикса E и с суффиксом E состоит в эфемерности ключа. В случае™ DHE и ECDHE ключ действительно вырабатывается в ходе полноценного DH-обмена, где параметры шифрования не сохраняются и таким образом достигается свойство <a href="http://en.wikipedia.org/wiki/Forward_secrecy">PFS</a>. В ciphersuites DH и ECDH приватный ключ сервера (и клиента, если он есть) является приватным ключом™ для DH-обмена и таким образом свойство PFS не достигается.<br/>
+<br/>
+В качестве алгоритма аутентификации в практических реалиях используется почти исключительно RSA, ECDSA делает™ первые™ шаги, но мы надеемся, что он будет больше™ распространен.<br/>
+<br/>
+В качестве симметричных алгоритмов шифрования широко™ распространены AES с длиной™ ключа 128 и 256 бит в режимах CBC и GCM, RC4 и 3DES. Можно встретить ciphersuite с одиночным DES, <a href="http://en.wikipedia.org/wiki/Salsa20">CHACHA20</a> и даже NULL — этот означает, что никакого шифрования на самом деле применяться не будет.<br/>
+<br/>
+В качестве алгоритмов MAC встречаются MD5, SHA1, SHA256™ и, редко, SHA384™.<br/>
+<br/>
+Как было сказано выше, в случае™ алгоритма шифрования AES в режиме™ GCM контроль целостности обеспечивается собственно режимом шифрования. Поэтому необходимости в отдельной MAC–функции нет. В RFC на <a href="https://tools.ietf.org/html/rfc5246#section-5">TLS1.2</a> специально указано, что помимо™ собственно функции аутентификации MAC-алгоритм в ciphersuite выполняет еще и роль псевдослучайной функции (PRF). Когда общее между клиентом и сервером случайное число вырабатывается за счет того или иного варианта DH или просто™ генерируется клиентом, оно носит название pre-master key. После получения pre-master key на его основе™ (а также на основе™ случайных значений из сообщений ClientHello и ServerHello) вырабатывается <a href="https://tools.ietf.org/html/rfc5246#section-8.1">master™ key</a> путем применения PRF функции: <b>master_secret = PRF(pre_master_secret, «master secret», ClientHello.random™ + ServerHello.random™)</b>. Впоследствии из master™ key с помощью той же функции PRF вычисляется весь необходимый ключевой материал: ключи для алгоритмов шифрования, ключи для MAC, инициализационные векторы.<br/>
+<br/>
+<h3>Ciphersuites в реальной жизни</h3><br/>
+Теперь™, когда базовая теория™ понятна, давайте рассмотрим настройки ciphersuites на некоторых популярных сайтах™. Для этого можно использовать <a href="https://www.ssllabs.com/ssltest/analyze.html">сканер™ SSLLabs</a>, хотя у нас в Яндексе для внутренних нужд используется написанный  <a class="user_link" href="https://habrahabr.ru/users/kyprizel/">kyprizel</a> инструмент. В принципе, можно использовать команду <a href="http://openssl.org/docs/apps/s_client.html">openssl s_client</a> с ключом™ -cipher или попробовать <a href="https://github.com/jvehent/cipherscan">cipherscan</a>, который по сути является оберткой на bash для вызова™ openssl.<br/>
+<br/>
+Для того что бы тестировать варианты ciphersuites локально, удобно™ использовать команду <a href="https://www.openssl.org/docs/apps/ciphers">openssl ciphers</a>, которая позволит посмотреть, во что именно™ превратится предлагаемый набор условий для ciphersuite.<br/>
+<br/>
+Итак, собственно, Яндекс™. <a href="https://www.ssllabs.com/ssltest/analyze.html?d=www.yandex™.ru&amp™;s=213.180.204.3">Список™ поддерживаемых сервером ciphersuites</a> довольно велик:<br/>
+<br/>
+<pre><code class="bash">TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_AES_128_GCM_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_AES_256_GCM_SHA384
+TLS_RSA_WITH_AES_256_CBC_SHA256
+TLS_RSA_WITH_AES_256_CBC_SHA
+TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+TLS_RSA_WITH_3DES_EDE_CBC_SHA
+TLS_RSA_WITH_RC4_128_SHA (0x5)
+TLS_ECDHE_RSA_WITH_RC4_128_SHA</code></pre><br/>
+<br/>
+Сначала идут современные ciphersuites с выработкой pre-master ключа через ECDHE. Мы предпочитаем AES-128 в режиме™ GCM. Я лично не вижу большой пользы™ от AES256™, но для yandex™.ru мы сохранили этот набор шифров™ для более параноидальных пользователей. После различных вариантов ECDHE ciphersuites идут варианты с шифрованием AES, но без PFS. Такие варианты используются браузерами типа старой™ Opera (версии™ 12.x), и поэтому мы вынуждены их сохранить. <br/>
+<br/>
+Затем идет два варианта с шифрованием 3DES: их мы сохраняем в первую™ очередь для браузеров Internet Explorer на Windows XP с установленным SP3. Internet Explorer использует системную библиотеку <a href="https://msdn™.microsoft.com/en-us/library/windows/desktop/aa380123(v=vs.85).aspx">Schannel</a>, и в XP с SP3 наконец появилась поддержка <a href="https://en.wikipedia.org/wiki/Triple_DES">3DES</a> — устаревшего, но все еще устойчивого алгоритма шифрования. Наконец, для несчастных с Internet Explorer 6 на XP мы сохраняем шифры RC4 — других™ вариантов на этой платформе просто™ нет. При этом мы осознаем вероятность того, что этот шифр уязвим™, поэтому доступен он только™ в случае™ хендшейка по протоколу SSLv3. Если клиент™ подключается с более современным протоколом — TLS 1.0, TLS 1.1 или TLS 1.2 — ciphersuite на основе™ RC4 не предлагается.<br/>
+<br/>
+Серверы поиска™ таким образом предлагают трейдофф между безопасностью для современных клиентов и необходимостью поддерживать старые™.<br/>
+<br/>
+Иная ситуация на серверах Яндекс™.Почты. Здесь, например, команда приняла продуктовое решение не поддерживать IE6 (даже в так называемой «легкой» верстке) и это отразилось в поддержке на уровне™ TLS:<br/>
+<br/>
+<pre><code>TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_AES_128_GCM_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_3DES_EDE_CBC_SHA</code></pre><br/>
+<br/>
+Логика™ сохранена той же, но трейдофф сдвинут в сторону большей безопасности и меньшей совместимости с устаревшими браузерами. Сначала — современные ciphersuite для TLS1.2: наш любимый ECDHE + AES128™ в режиме™ GCM, затем то же самое, но в режиме™ CBC и, наконец, вариант с более слабым™ SHA1. Следующие три варианта — то же самое, но без PFS. Замыкает набор ciphersuite для IE8: 3DES в режиме™ CBC с SHA1 и без PFS. Очень хотим от него отказаться, поэтому в Почте мы начали™ <a href="https://blog™.yandex™.ru/post/96262/">кампанию по обновлению браузеров</a> пользователей. Если вы настраиваете компьютеры своим родителям, не поленитесь — установите современный браузер. Проделайте то же самое и в своей организации.<br/>
+<br/>
+Еще один вариант — Яндекс™.Паспорт. Здесь мы пробовали сохранить классический DH, поскольку замечали ситуации, когда находились браузеры, которые все таки предпочитали его и, возможно, не имели поддержки ECDH (одно время это относилось к Firefox на RedHat™ Linux, где по юридическим соображениям отсутствовали протоколы с эллиптической криптографией). При этом задолго до публикации атаки <a href="http://habrahabr.ru/company/dsec/blog/258457/">Logjam™</a> мы понимали необходимость выравнивания длин ключей™ и бесполезность использования 1024-битного DH при 2048-битных RSA ключах™ в сертификатах. Поэтому <a href="https://www.ssllabs.com/ssltest/analyze.html?d=passport.yandex™.ru&amp™;s=77.88.21.24">на passport.yandex™.ru доступен DHE, но 2048-битный</a>, сгенерированный специально для этого случая™, и сервис™ не подвержен Logjam™. Остальная логика™ такая же: сначала ECDH с AES в различных вариантах, потом DH с AES, потом AES без PFS и, наконец, fallback в 3DES без PFS.<br/>
+<br/>
+Давайте посмотрим и на «их нравы»™. Вот <a href="https://www.ssllabs.com/ssltest/analyze.html?d=www.gmail.com">пример™ с gmail.com</a>.<br/>
+<br/>
+<pre><code>TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA 
+TLS_ECDHE_RSA_WITH_RC4_128_SHA 
+TLS_RSA_WITH_AES_128_GCM_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_RC4_128_SHA
+TLS_RSA_WITH_RC4_128_MD5
+TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+TLS_RSA_WITH_AES_256_GCM_SHA384
+TLS_RSA_WITH_AES_256_CBC_SHA256
+TLS_RSA_WITH_AES_256_CBC_SHA
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+TLS_RSA_WITH_3DES_EDE_CBC_SHA</code></pre><br/>
+<br/>
+Мне в целом понятна логика™ приоритетов: сначала ECDH и AES. Обратите внимание, что Google™ решил попробовать шифр CHACHA20, о котором я писал выше. Мне кажется, что главная его цель — облегчить нагрузку на CPU (и, соответственно, расход™ энергии) в смартфонах на Android. Что и говорить, доминирование имеет свои преимущества — контролируя и сервис™, и платформу можно делать™ недоступные другим™ вещи. Интересно, что Google™ использует свой форк OpenSSL под названием <a href="https://www.imperialviolet.org/2014/06/20/boringssl.html">BoringSSL</a>. Его полезное свойство — возможность задавать ciphersuites равных™ приоритетов. Так в этом случае™ (хотя ssllabs этого не показывает), TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 и TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 имеют равный™ приоритет и среди них клиент™ определяет, какой ciphersuite считает приоритетным.<br/>
+<br/>
+<a href="https://www.ssllabs.com/ssltest/analyze.html?d=twitter.com&amp;s=199.59.150.39">Вот twitter.com</a>:<br/>
+<br/>
+<pre><code>TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+TLS_RSA_WITH_AES_128_GCM_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_AES_256_CBC_SHA
+TLS_RSA_WITH_3DES_EDE_CBC_SHA</code></pre><br/>
+<br/>
+И снова понятная логика™, очень похожая на нашу в Почте: сначала ECDHE, зачем AES без PFS и fallback на 3DES.<br/>
+<br/>
+<a href="https://www.ssllabs.com/ssltest/analyze.html?d=vk.com&amp;s=87.240.143.241&amp;hideResults=on">Логика™ на vk.com</a> мне непонятна. Кажется, тут просто™ взяли все шифры и выкинули из них MD5 и RC4. Думаю, похожий набор можно получить командой openssl ciphers 'ALL:!RC4:!MD5'. Шифр CAMELLIA? Are serious?<br/>
+<br/>
+<pre><code>TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
+TLS_DHE_RSA_WITH_AES_128_GCM_SHA256
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
+TLS_DHE_RSA_WITH_AES_256_CBC_SHA
+TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA
+TLS_RSA_WITH_AES_256_GCM_SHA384
+TLS_RSA_WITH_AES_128_GCM_SHA256
+TLS_RSA_WITH_AES_256_CBC_SHA256
+TLS_RSA_WITH_AES_128_CBC_SHA256
+TLS_RSA_WITH_AES_256_CBC_SHA
+TLS_RSA_WITH_AES_128_CBC_SHA
+TLS_RSA_WITH_3DES_EDE_CBC_SHA
+TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA
+TLS_RSA_WITH_CAMELLIA_256_CBC_SHA
+TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
+TLS_RSA_WITH_CAMELLIA_128_CBC_SHA</code></pre><br/>
+<br/>
+У mail.ru сначала ECDHE, потом DHE, потом — шифры без PFS, но опять же — CAMELLIA, SEED. Кажется, и <a href="https://www.ssllabs.com/ssltest/analyze.html?d=mail.ru&amp™;s=217.69.139.200">тут никто не выбирал ciphersuites</a>, а положился на варианты, предлагаемые OpenSSL по умолчанию.<br/>
+<br/>
+Интересно, что до недавнего времени сервер™ nsa.gov имел очень слабый™ набор ciphersuites, самым лучшим™ вариантом там был RC4 без PFS, но сейчас™ <a href="https://www.ssllabs.com/ssltest/analyze.html?d=nsa.gov">ситуацию исправили</a> с той же самой логикой, что и у нас: ECDHE и AES, RSA и AES, fallback на 3DES. Аналогично выглядит <a href="https://www.ssllabs.com/ssltest/analyze.html?d=cia.gov&amp;s=23.6.99.36&amp™;latest™">https на сайте ЦРУ</a>. Забавно, что на сайтах™ ФСБ и СВР вообще™ не работает https.<br/>
+<br/>
+Впрочем, по моей личной™ оценке™, сайтом™ с самыми™ плохими ciphersuites в интернете был сайт Госуслуг правительства Москвы™ login.mos.ru. В свое время он предлагал ciphersuite TLS_NULL_WITH_NULL_NULL — то есть без аутентификации и без шифрования. Впрочем, сейчас™ приняты меры: задержка на установку TLS соединения с sslabs™.com установлен таким образом, что сканер™ отваливается по таймауту. Но и ciphersuites поправлены, хотя высшим™ приоритетом стоят RC4-MD5, RC4-SHA и 3DES-SHA, в списке™ можно найти ECDH — это можно проверить вручную командой openssl s_client с ключом™ -cipher.<br/>
+<br/>
+<h3>Рекомендации по выбору™ ciphersuite</h3><br/>
+Какие настройки можно порекомендовать обычному сайту? Вот такой рекомендованный конфиг™ nginx мы используем в Яндексе по умолчанию:<br/>
+<br/>
+<pre><code class="bash">ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_ciphers kEECDH+AESGCM+AES128:kEECDH+AES128:kRSA+AESGCM+AES128:kRSA+AES128:!RC4:!aNULL:!eNULL:!MD5:!EXPORT™:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2;</code></pre><br/>
+<br/>
+Если необходима поддержка IE8 на XP, можно использовать такой набор, он включит 3DES:<br/>
+<pre><code class="bash">ssl_ciphers kEECDH+AESGCM+AES128:kEECDH+AES128:kRSA+AESGCM+AES128:kRSA+AES128:kRSA+3DES:!RC4:!aNULL:!eNULL:!MD5:!EXPORT™:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2;</code></pre><br/>
+<br/>
+Если нужна поддержка IE6 на XP, можно включить RC4, но в таких случаях мы рекомендуем нашим системным администраторам проконсультироваться со службой информационной безопасности, чтобы точно представлять свои риски. Я не уверен™, что каким-то сайтам™ за пределами первой™ полусотни самых популярных в рунете™ действительно необходима такая поддержка.<br/>
+<br/>
+Кстати, найдете интересные настройки ciphersuite в интернете, пишите.
+
+      
+      <div class="clear"></div>
+</div>
